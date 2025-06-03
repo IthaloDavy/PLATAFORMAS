@@ -5,14 +5,16 @@ using UnityEngine.UI;
 
 public class PuzzleManager : MonoBehaviour
 {
-    public Transform puzzlePanel;               // Painel com as peças (GridLayoutGroup)
-    public Button undoButton;                   // Botão "Desfazer"
-    public Button replayButton;                 // Botão "Ver Replay" (tela de vitória)
-    public GameObject victoryPanel;             // Painel de vitória com botões
+    public Transform puzzlePanel; // Painel com as peças (GridLayoutGroup)
+    public Button undoButton;     // Botão "Desfazer"
+    public Button replayButton;   // Botão "Ver Replay"
+    public Button skipReplayButton; // Botão "Pular Replay"
+    public GameObject victoryPanel; // Painel de vitória
 
     private PuzzlePiece selectedPiece;
     private Stack<ICommand> history = new Stack<ICommand>();
     private List<ICommand> replayCommands = new List<ICommand>();
+    private List<int> initialOrder = new List<int>();
     private bool isReplaying = false;
 
     void Start()
@@ -20,9 +22,11 @@ public class PuzzleManager : MonoBehaviour
         InitializePieces();
         ShufflePieces();
         victoryPanel.SetActive(false);
+        skipReplayButton.gameObject.SetActive(false);
 
         undoButton.onClick.AddListener(UndoMove);
         replayButton.onClick.AddListener(StartReplay);
+        skipReplayButton.onClick.AddListener(SkipReplay);
     }
 
     void InitializePieces()
@@ -42,11 +46,19 @@ public class PuzzleManager : MonoBehaviour
             puzzlePanel.GetChild(i).SetSiblingIndex(rand);
         }
 
-        // Atualizar os índices atuais das peças após embaralhar
+        // Atualiza os índices atuais
         for (int i = 0; i < puzzlePanel.childCount; i++)
         {
             PuzzlePiece piece = puzzlePanel.GetChild(i).GetComponent<PuzzlePiece>();
             piece.currentIndex = i;
+        }
+
+        // Salva ordem inicial para replay
+        initialOrder.Clear();
+        for (int i = 0; i < puzzlePanel.childCount; i++)
+        {
+            PuzzlePiece piece = puzzlePanel.GetChild(i).GetComponent<PuzzlePiece>();
+            initialOrder.Add(piece.correctIndex);
         }
     }
 
@@ -64,21 +76,17 @@ public class PuzzleManager : MonoBehaviour
             {
                 ICommand command = new SwapCommand(selectedPiece, piece);
                 command.Execute();
-
                 history.Push(command);
                 replayCommands.Add(command);
-
                 CheckVictory();
             }
-
             selectedPiece = null;
         }
     }
 
     public void UndoMove()
     {
-        if (isReplaying || selectedPiece != null || history.Count == 0)
-            return;
+        if (isReplaying || selectedPiece != null || history.Count == 0) return;
 
         ICommand lastCommand = history.Pop();
         lastCommand.Undo();
@@ -91,7 +99,6 @@ public class PuzzleManager : MonoBehaviour
             PuzzlePiece piece = child.GetComponent<PuzzlePiece>();
             if (!piece.IsCorrect()) return;
         }
-
         ShowVictory();
     }
 
@@ -104,6 +111,7 @@ public class PuzzleManager : MonoBehaviour
     {
         if (isReplaying) return;
 
+        skipReplayButton.gameObject.SetActive(true);
         victoryPanel.SetActive(false);
         StartCoroutine(ReplayRoutine());
     }
@@ -121,6 +129,22 @@ public class PuzzleManager : MonoBehaviour
         }
 
         isReplaying = false;
+        skipReplayButton.gameObject.SetActive(false);
+        ShowVictory();
+    }
+
+    public void SkipReplay()
+    {
+        StopAllCoroutines();
+        ResetPuzzle();
+
+        foreach (ICommand command in replayCommands)
+        {
+            command.Execute();
+        }
+
+        isReplaying = false;
+        skipReplayButton.gameObject.SetActive(false);
         ShowVictory();
     }
 
@@ -128,10 +152,16 @@ public class PuzzleManager : MonoBehaviour
     {
         for (int i = 0; i < puzzlePanel.childCount; i++)
         {
-            puzzlePanel.GetChild(i).SetSiblingIndex(i);
-
-            PuzzlePiece piece = puzzlePanel.GetChild(i).GetComponent<PuzzlePiece>();
-            piece.currentIndex = i;
+            for (int j = 0; j < puzzlePanel.childCount; j++)
+            {
+                PuzzlePiece piece = puzzlePanel.GetChild(j).GetComponent<PuzzlePiece>();
+                if (piece.correctIndex == initialOrder[i])
+                {
+                    piece.transform.SetSiblingIndex(i);
+                    piece.currentIndex = i;
+                    break;
+                }
+            }
         }
 
         history.Clear();
@@ -140,6 +170,7 @@ public class PuzzleManager : MonoBehaviour
 
     public void RestartGame()
     {
+        skipReplayButton.gameObject.SetActive(false);
         history.Clear();
         replayCommands.Clear();
         selectedPiece = null;
